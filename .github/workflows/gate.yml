@@ -1,0 +1,15 @@
+name: gate
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    uses: PONOdata/gatekeeper/.github/workflows/reusable-ci.yml@v1
+    with:
+      runner_labels: '["ubuntu-latest"]'
+      run_semgrep: true
+      run_tell_check: true
+      run_dependency_review: false
