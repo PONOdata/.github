@@ -7,9 +7,17 @@ permissions:
   contents: read
 jobs:
   gate:
-    uses: PONOdata/gatekeeper/.github/workflows/reusable-ci.yml@v1
+    uses: PONOdata/gatekeeper/.github/workflows/reusable-ci.yml@v0.4.0
     with:
       runner_labels: '["ubuntu-latest"]'
+      # This repo is the org profile: profile/README.md and this workflow.
+      # There is no code to lint, no types to check, nothing to test and
+      # nothing to build, so all four are declared rather than left blank.
+      # Under v1 a blank command reported success, which made four required
+      # checks look like verification of a repo that has nothing to verify.
+      # semgrep and tell_check still run, and tell_check is the one that
+      # matters here: profile/README.md is public-facing text.
+      unconfigured_ok: "lint,typecheck,test,build"
       run_semgrep: true
       run_tell_check: true
       run_dependency_review: false
