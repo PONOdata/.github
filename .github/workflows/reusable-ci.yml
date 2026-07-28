@@ -1,0 +1,217 @@
+name: reusable-ci
+
+# A local copy of the shared gate, kept here on purpose.
+#
+# This repo is PUBLIC and PONOdata/gatekeeper is PRIVATE. GitHub does not let
+# a public repository call a reusable workflow from a private one, so the
+# usual `uses: PONOdata/gatekeeper/...` caller fails before any job starts:
+# no jobs, no check runs, nothing to report. Meanwhile the ruleset requires
+# seven `gate / *` contexts, so every pull request here was unmergeable, with
+# no failing check to point at. grumpyscreen, pono-kalico and Pono-toolkit are
+# the org's other public repos and all three already carry a local copy for
+# this same reason.
+#
+# The check contexts are "gate / lint", "gate / test" and so on, which only
+# exist when a job named `gate` calls a reusable workflow. A plain workflow
+# would produce bare "lint", which is not what the ruleset requires. That is
+# why this indirection exists rather than four ordinary jobs.
+#
+# Everything here is self-contained: no private actions, since those are
+# unreachable from a public repo for the same reason the reusable is.
+#
+# A gate with no command FAILS, matching gatekeeper v0.4.0. Silence is not a
+# pass; a repo with genuinely nothing to run names the gate in
+# unconfigured_ok.
+on:
+  workflow_call:
+    inputs:
+      runner_labels:
+        type: string
+        default: '["ubuntu-latest"]'
+      lint_cmd:
+        type: string
+        default: ''
+      typecheck_cmd:
+        type: string
+        default: ''
+      test_cmd:
+        type: string
+        default: ''
+      build_cmd:
+        type: string
+        default: ''
+      unconfigured_ok:
+        type: string
+        default: ''
+      run_semgrep:
+        type: boolean
+        default: true
+      semgrep_config:
+        type: string
+        default: 'p/default'
+      run_tell_check:
+        type: boolean
+        default: true
+      run_dependency_review:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+      - name: lint
+        env:
+          CMD: ${{ inputs.lint_cmd }}
+          OK: ${{ inputs.unconfigured_ok }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CMD" ]; then eval "$CMD"; exit 0; fi
+          case ",$(printf '%s' "$OK" | tr -d '[:space:]')," in
+            *,lint,*) echo "lint: no command, declared not applicable in unconfigured_ok"; exit 0 ;;
+          esac
+          echo "::error::lint has no command configured and is not named in unconfigured_ok."
+          exit 1
+
+  typecheck:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+      - name: typecheck
+        env:
+          CMD: ${{ inputs.typecheck_cmd }}
+          OK: ${{ inputs.unconfigured_ok }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CMD" ]; then eval "$CMD"; exit 0; fi
+          case ",$(printf '%s' "$OK" | tr -d '[:space:]')," in
+            *,typecheck,*) echo "typecheck: no command, declared not applicable in unconfigured_ok"; exit 0 ;;
+          esac
+          echo "::error::typecheck has no command configured and is not named in unconfigured_ok."
+          exit 1
+
+  test:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+      - name: test
+        env:
+          CMD: ${{ inputs.test_cmd }}
+          OK: ${{ inputs.unconfigured_ok }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CMD" ]; then eval "$CMD"; exit 0; fi
+          case ",$(printf '%s' "$OK" | tr -d '[:space:]')," in
+            *,test,*) echo "test: no command, declared not applicable in unconfigured_ok"; exit 0 ;;
+          esac
+          echo "::error::test has no command configured and is not named in unconfigured_ok."
+          exit 1
+
+  build:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+      - name: build
+        env:
+          CMD: ${{ inputs.build_cmd }}
+          OK: ${{ inputs.unconfigured_ok }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CMD" ]; then eval "$CMD"; exit 0; fi
+          case ",$(printf '%s' "$OK" | tr -d '[:space:]')," in
+            *,build,*) echo "build: no command, declared not applicable in unconfigured_ok"; exit 0 ;;
+          esac
+          echo "::error::build has no command configured and is not named in unconfigured_ok."
+          exit 1
+
+  semgrep:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: semgrep
+        env:
+          RUN: ${{ inputs.run_semgrep }}
+          CONFIG: ${{ inputs.semgrep_config }}
+          BASELINE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$RUN" != "true" ]; then echo "semgrep disabled, passing"; exit 0; fi
+          python3 -m pip install --user --quiet semgrep==1.168.0 2>/dev/null \
+            || python3 -m pip install --user --quiet --break-system-packages semgrep==1.168.0
+          export PATH="$HOME/.local/bin:$PATH"
+          if [ -n "$BASELINE" ] && git cat-file -e "$BASELINE" 2>/dev/null; then
+            semgrep scan --error --config "$CONFIG" --quiet --baseline-commit "$BASELINE" .
+          else
+            semgrep scan --error --config "$CONFIG" --quiet .
+          fi
+
+  tell_check:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: tell_check
+        env:
+          RUN: ${{ inputs.run_tell_check }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$RUN" != "true" ]; then echo "tell_check disabled, passing"; exit 0; fi
+          # The in-house ai-tells linter is a private action and therefore
+          # unreachable here. This covers the mechanical half of the house
+          # style on added lines only: em dash, en dash and unicode arrows.
+          # Judgement calls stay with review.
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "no usable base ref; scanning the whole tree"
+            target=$(git ls-files -z | xargs -0 -r grep -nP '[\x{2014}\x{2013}\x{2192}\x{2190}\x{21d2}]' || true)
+          else
+            target=$(git diff --unified=0 "$BASE" HEAD -- . \
+              | grep -P '^\+' | grep -vP '^\+\+\+' \
+              | grep -nP '[\x{2014}\x{2013}\x{2192}\x{2190}\x{21d2}]' || true)
+          fi
+          if [ -n "$target" ]; then
+            echo "$target"
+            echo "::error::em dash, en dash or unicode arrow found. House style uses commas, periods and hyphens."
+            exit 1
+          fi
+          echo "tell_check: clean"
+
+  dependency-review:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5.0.0
+        with:
+          persist-credentials: false
+      - name: dependency-review
+        if: ${{ inputs.run_dependency_review && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v4
+        with:
+          base-ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          head-ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+      - name: dependency-review-disabled
+        if: ${{ !inputs.run_dependency_review || (github.event_name != 'pull_request' && github.event_name != 'merge_group') }}
+        run: echo "dependency-review not applicable on this event or disabled, passing"
