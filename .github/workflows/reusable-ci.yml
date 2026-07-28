@@ -184,13 +184,32 @@ jobs:
           # unreachable here. This covers the mechanical half of the house
           # style on added lines only: em dash, en dash and unicode arrows.
           # Judgement calls stay with review.
+          #
+          # The pattern is literal UTF-8 bytes built with printf, not a -P
+          # hex class. grep -P '[\x{2014}]' needs a UTF-8 locale: under
+          # LC_ALL=C, which is what a runner with no LANG set falls back to,
+          # PCRE rejects the escape and grep exits 2. Paired with the `|| true`
+          # this step used to carry, that error read as a clean tree, so the
+          # only tell gate a public repo can run would have passed silently.
+          # An exit above 1 now fails the job instead.
+          pat="$(printf '\xe2\x80\x94\|\xe2\x80\x93\|\xe2\x86\x92\|\xe2\x86\x90\|\xe2\x87\x92')"
           if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
             echo "no usable base ref; scanning the whole tree"
-            target=$(git ls-files -z | xargs -0 -r grep -nP '[\x{2014}\x{2013}\x{2192}\x{2190}\x{21d2}]' || true)
+            set +e
+            target="$(git grep -n -e "$pat" -- .)"
+            rc=$?
+            set -e
           else
-            target=$(git diff --unified=0 "$BASE" HEAD -- . \
-              | grep -P '^\+' | grep -vP '^\+\+\+' \
-              | grep -nP '[\x{2014}\x{2013}\x{2192}\x{2190}\x{21d2}]' || true)
+            set +e
+            target="$(git diff --unified=0 "$BASE" HEAD -- . \
+              | grep '^+' | grep -v '^+++' \
+              | grep -n "$pat")"
+            rc=$?
+            set -e
+          fi
+          if [ "$rc" -gt 1 ]; then
+            echo "::error::tell_check could not run its scan (exit $rc); refusing to report clean."
+            exit 1
           fi
           if [ -n "$target" ]; then
             echo "$target"
