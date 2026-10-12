@@ -27,7 +27,7 @@ on:
     inputs:
       runner_labels:
         type: string
-        default: '["ubuntu-latest"]'
+        default: '["self-hosted","X64","Linux"]'
       lint_cmd:
         type: string
         default: ''
