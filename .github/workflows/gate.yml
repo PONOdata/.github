@@ -15,7 +15,7 @@ jobs:
     # public repos already carry a local copy for the same reason.
     uses: ./.github/workflows/reusable-ci.yml
     with:
-      runner_labels: '["ubuntu-latest"]'
+      runner_labels: '["self-hosted","X64","Linux"]'
       # This repo is the org profile: profile/README.md and two workflows.
       # There is no code to lint, no types to check, nothing to test and
       # nothing to build, so all four are declared rather than left blank.
